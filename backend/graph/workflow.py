@@ -4,7 +4,7 @@ LangGraph Workflow Construction.
 Builds the stateful graph that orchestrates the multi-agent SDLC workflow.
 """
 
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, Callable
 from langgraph.graph import StateGraph, END
 from langgraph.checkpoint.memory import MemorySaver
 
@@ -151,6 +151,35 @@ class WorkflowRunner:
         result = None
         for event in self.workflow.stream(initial_state, config):
             result = event
+        
+        return self._extract_state(result)
+    
+    def start_task_with_updates(
+        self,
+        task_id: str,
+        task_description: str,
+        target_repo_path: Optional[str] = None,
+        github_repo_url: Optional[str] = None,
+        on_update: Optional[Callable] = None,
+    ) -> Dict[str, Any]:
+        """Start task with callback for status updates."""
+        initial_state = create_initial_state(
+            task_id=task_id,
+            task_description=task_description,
+            target_repo_path=target_repo_path,
+            github_repo_url=github_repo_url,
+            max_iterations=self.settings.max_iterations,
+        )
+        
+        config = {"configurable": {"thread_id": task_id}}
+        
+        result = None
+        for event in self.workflow.stream(initial_state, config):
+            result = event
+            # Call update callback with extracted state
+            if on_update and result:
+                extracted = self._extract_state(result)
+                on_update(extracted)
         
         return self._extract_state(result)
     

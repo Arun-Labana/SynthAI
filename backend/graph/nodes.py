@@ -71,21 +71,12 @@ def get_sandbox() -> DockerSandbox:
 # === Node Functions ===
 
 def pm_node(state: AgentState) -> AgentState:
-    """
-    PM Agent Node - Generates technical specification from task description.
-    
-    Entry point of the workflow.
-    """
+    """PM Agent Node - Generates technical specification."""
+    print(f"\n📋 [PM Node] Starting...")
     agent = get_pm_agent()
-    
-    # Update status
-    state_update = {"status": WorkflowStatus.PM_PROCESSING}
-    
-    # Run agent
     result = agent.run(state)
-    
-    # Merge updates
-    return {**state_update, **result}
+    print(f"📋 [PM Node] Done - Generated spec with {len(result.get('task_breakdown', []))} tasks")
+    return {**result, "status": WorkflowStatus.PM_PROCESSING}
 
 
 def dev_node(state: AgentState) -> AgentState:
@@ -95,48 +86,37 @@ def dev_node(state: AgentState) -> AgentState:
     Uses RAG to understand existing codebase and generates code
     that matches the specification.
     """
+    print(f"\n💻 [Dev Node] Starting...")
     agent = get_dev_agent()
-    
-    # Update status
-    state_update = {"status": WorkflowStatus.DEV_PROCESSING}
-    
-    # Run agent
     result = agent.run(state)
-    
-    return {**state_update, **result}
+    files = list(result.get('code_files', {}).keys())
+    print(f"💻 [Dev Node] Done - Generated {len(files)} files: {files}")
+    return {**result, "status": WorkflowStatus.DEV_PROCESSING}
 
 
 def qa_node(state: AgentState) -> AgentState:
-    """
-    QA Agent Node - Generates test suite for the implementation.
-    
-    Creates pytest-compatible tests based on the code and specification.
-    """
+    """QA Agent Node - Generates test suite."""
+    print(f"\n🧪 [QA Node] Starting...")
     agent = get_qa_agent()
-    
-    # Update status
-    state_update = {"status": WorkflowStatus.QA_PROCESSING}
-    
-    # Run agent
     result = agent.run(state)
-    
-    return {**state_update, **result}
+    tests = list(result.get('test_files', {}).keys())
+    print(f"🧪 [QA Node] Done - Generated {len(tests)} test files: {tests}")
+    return {**result, "status": WorkflowStatus.QA_PROCESSING}
 
 
 def sandbox_node(state: AgentState) -> AgentState:
-    """
-    Sandbox Node - Executes code and tests in Docker container.
-    
-    This is the critical safety component that runs AI-generated code
-    in isolation.
-    """
+    """Sandbox Node - Executes code in Docker."""
+    print(f"\n🐳 [Sandbox Node] Starting...")
     sandbox = get_sandbox()
     
-    # Get code and test files
     code_files = state.get('code_files', {})
     test_files = state.get('test_files', {})
     
+    print(f"🐳 [Sandbox] Code files: {list(code_files.keys())}")
+    print(f"🐳 [Sandbox] Test files: {list(test_files.keys())}")
+    
     if not code_files:
+        print(f"🐳 [Sandbox] ❌ No code files!")
         return {
             "status": WorkflowStatus.FAILED,
             "error_message": "No code files to execute",
@@ -149,13 +129,16 @@ def sandbox_node(state: AgentState) -> AgentState:
             }],
         }
     
-    # Run in sandbox
     result: SandboxResult = sandbox.run(code_files, test_files)
     
-    # Format execution logs
+    print(f"🐳 [Sandbox] Exit code: {result.exit_code}")
+    print(f"🐳 [Sandbox] Success: {result.success}")
+    print(f"🐳 [Sandbox] STDOUT:\n{result.stdout[:500]}...")
+    if result.stderr:
+        print(f"🐳 [Sandbox] STDERR:\n{result.stderr[:500]}...")
+    
     execution_logs = f"=== STDOUT ===\n{result.stdout}\n\n=== STDERR ===\n{result.stderr}"
     
-    # Determine test results summary
     if result.success:
         test_summary = "All tests passed!"
     else:
@@ -183,15 +166,14 @@ def reviewer_node(state: AgentState) -> AgentState:
     - Send back to Dev Agent for fixes
     - Fail the workflow
     """
+    print(f"\n🔍 [Reviewer Node] Starting...")
+    print(f"🔍 [Reviewer] Exit code from sandbox: {state.get('exit_code')}")
     agent = get_reviewer_agent()
-    
-    # Update status
-    state_update = {"status": WorkflowStatus.REVIEW_PROCESSING}
-    
-    # Run agent
     result = agent.run(state)
-    
-    return {**state_update, **result}
+    decision = result.get('status', 'unknown')
+    print(f"🔍 [Reviewer Node] Done - Decision: {decision}")
+    # Don't overwrite the status - agent sets the correct one (awaiting_approval, dev_processing, or failed)
+    return result
 
 
 def human_approval_node(state: AgentState) -> AgentState:

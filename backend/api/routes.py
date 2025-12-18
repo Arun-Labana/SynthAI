@@ -389,28 +389,60 @@ def _run_workflow_sync(
         
         _task_states[task_id]["status"] = WorkflowStatus.PM_PROCESSING.value
         
-        result = runner.start_task(
+        # Run workflow with status updates after each step
+        result = runner.start_task_with_updates(
             task_id=task_id,
             task_description=task_description,
             target_repo_path=target_repo_path,
             github_repo_url=github_repo_url,
+            on_update=lambda state: _update_task_state(task_id, state),
         )
         
-        print(f"[{task_id}] ✅ Workflow completed: {result.get('status', 'unknown')}")
+        final_status = result.get('status', 'unknown')
+        print(f"[{task_id}] ✅ Workflow completed: {final_status}")
         
+        # Get full state for code/test files
+        status = runner.get_status(task_id)
+        
+        # Update task state with result (has correct final status)
         _task_states[task_id].update(result)
         
-        status = runner.get_status(task_id)
+        # Add full file contents
         if "code_files" in status:
             _task_states[task_id]["full_code_files"] = status.get("code_files", {})
         if "test_files" in status:
             _task_states[task_id]["full_test_files"] = status.get("test_files", {})
+        
+        # Ensure status is correct (result has the authoritative status)
+        if "status" in result:
+            _task_states[task_id]["status"] = result["status"]
+        
+        print(f"[{task_id}] Final status in _task_states: {_task_states[task_id].get('status')}")
             
     except Exception as e:
         print(f"[{task_id}] ❌ Error: {str(e)}")
         traceback.print_exc()
         _task_states[task_id]["status"] = WorkflowStatus.FAILED.value
         _task_states[task_id]["error_message"] = str(e)
+
+
+def _update_task_state(task_id: str, state: Dict[str, Any]):
+    """Update task state from workflow progress."""
+    if task_id in _task_states:
+        if "status" in state:
+            status = state["status"]
+            # Convert WorkflowStatus enum to string if needed
+            _task_states[task_id]["status"] = status.value if hasattr(status, 'value') else str(status)
+        if "messages" in state:
+            _task_states[task_id]["messages"] = state.get("messages", [])
+        if "iteration_count" in state:
+            _task_states[task_id]["iteration_count"] = state.get("iteration_count", 0)
+        if "code_files" in state:
+            cf = state.get("code_files", {})
+            _task_states[task_id]["code_files"] = list(cf.keys()) if isinstance(cf, dict) else cf
+        if "test_files" in state:
+            tf = state.get("test_files", {})
+            _task_states[task_id]["test_files"] = list(tf.keys()) if isinstance(tf, dict) else tf
 
 
 def _run_workflow(

@@ -111,12 +111,17 @@ class DockerSandbox:
             if entry_command:
                 command = entry_command
             else:
-                # Default: run pytest on all test files
                 test_file_names = " ".join(test_files.keys())
-                command = f"cd /sandbox && pip install pytest pytest-cov -q && python -m pytest {test_file_names} -v --tb=short"
+                # Check if using custom sandbox image (has pytest) or base image (needs pip install)
+                if self._get_image() == self.CUSTOM_SANDBOX_IMAGE:
+                    command = f"cd /sandbox && python -m pytest {test_file_names} -v --tb=short"
+                else:
+                    # Base image - need to pip install first
+                    command = f"cd /sandbox && pip install pytest -q 2>/dev/null && python -m pytest {test_file_names} -v --tb=short"
             
-            # Run container
-            return self._execute_container(temp_dir, command)
+            # Run container (enable network if base image needs pip install)
+            needs_network = self._get_image() != self.CUSTOM_SANDBOX_IMAGE
+            return self._execute_container(temp_dir, command, network_enabled=needs_network)
             
         finally:
             # Cleanup temp directory
@@ -174,13 +179,14 @@ class DockerSandbox:
                 if not sub_init.exists():
                     sub_init.write_text("")
     
-    def _execute_container(self, code_dir: str, command: str) -> SandboxResult:
+    def _execute_container(self, code_dir: str, command: str, network_enabled: bool = False) -> SandboxResult:
         """
         Execute a command in a Docker container.
         
         Args:
             code_dir: Directory with code to mount
             command: Command to execute
+            network_enabled: Override to enable network (for pip install)
             
         Returns:
             SandboxResult
@@ -188,6 +194,9 @@ class DockerSandbox:
         import time
         
         start_time = time.time()
+        
+        # Network is disabled by default unless explicitly enabled
+        network_disabled = self.settings.sandbox_network_disabled and not network_enabled
         
         # Container configuration
         container_config = {
@@ -203,7 +212,7 @@ class DockerSandbox:
             "mem_limit": self.settings.sandbox_memory_limit,
             "cpu_period": 100000,
             "cpu_quota": int(100000 * self.settings.sandbox_cpu_limit),
-            "network_disabled": self.settings.sandbox_network_disabled,
+            "network_disabled": network_disabled,
             "detach": True,
             "remove": False,  # We'll remove after getting logs
         }
