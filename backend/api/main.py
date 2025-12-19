@@ -26,6 +26,14 @@ async def lifespan(app: FastAPI):
     print(f"   - API: http://{settings.api_host}:{settings.api_port}")
     print(f"   - Docs: http://{settings.api_host}:{settings.api_port}/docs")
     
+    # Initialize database
+    try:
+        from backend.database.connection import init_db
+        init_db()
+        print(f"   - Database: ✅ Connected")
+    except Exception as e:
+        print(f"   - Database: ❌ Error - {e}")
+    
     # Verify critical dependencies
     try:
         # Check Docker availability

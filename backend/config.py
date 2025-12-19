@@ -49,6 +49,12 @@ class Settings(BaseSettings):
     api_host: str = Field("0.0.0.0", description="API server host")
     api_port: int = Field(8000, description="API server port")
     
+    # Database Configuration
+    database_url: str = Field(
+        "postgresql://postgres:0000@127.0.0.1:5432/synthai",
+        description="Database URL (PostgreSQL)"
+    )
+    
     # RAG Configuration
     chunk_size: int = Field(1000, description="Code chunk size for embedding")
     chunk_overlap: int = Field(200, description="Chunk overlap for embedding")
